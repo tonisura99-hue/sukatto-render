@@ -1,0 +1,7 @@
+# 焼く時に非公開の倉庫から取る素材と、焼いた物（コミットしない）
+episodes/
+public/assets/
+out/
+node_modules/
+__pycache__/
+*.pyc

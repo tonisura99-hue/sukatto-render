@@ -1,0 +1,93 @@
+name: qa-stills
+
+# 検品用の静止画（PNG）だけを焼く。🔴 動画（mp4）はここでは焼かない。
+#   GitHub の Actions の規約は、その倉庫のソフトウェアの開発・試験と無関係な計算に使うことを禁じている。
+#   ここで焼くのは描画のコードを試す静止画（1回 約33コマ）だけ。公開する動画は別の場所で焼く。
+# 素材（絵・声・音楽・台本）はこの倉庫に置かない。焼く時だけ tools/fetch_private.py が、
+#   読み取り専用の鍵（Secrets の SUKATTO_ASSETS_TOKEN）で非公開の倉庫から「その回の物だけ」を取る。
+#   その前に「この倉庫のコード＝非公開の倉庫のその版のコード」を blob の指紋で確かめ、違えば止まる。
+# ⚠️ この倉庫は公開＝成果物とログは GitHub にログインした人ならだれでも見られる。
+#   成果物は静止画の PNG だけ（3日で消える）。素材そのもの・鍵はログにも成果物にも出さない
+#   （鍵の近くで set -x を使わない・入力は env で渡し、run の中に式を直に書かない）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "回の名前（例 short-ep076）"
+        required: true
+        type: string
+      ref:
+        description: "非公開の倉庫の版（commit の sha・40桁）"
+        required: true
+        type: string
+      frames:
+        description: "焼くコマ（例 11,45,120）。空なら tools/qa_frames.py の表（33コマ）"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  stills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SLUG: ${{ inputs.slug }}
+      REF: ${{ inputs.ref }}
+      FRAMES: ${{ inputs.frames }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # 鍵を渡すのはこの段だけ（ほかの段の環境には入らない）
+      - name: Fetch the episode files (private repository, read-only)
+        env:
+          SUKATTO_ASSETS_TOKEN: ${{ secrets.SUKATTO_ASSETS_TOKEN }}
+        run: python3 -B tools/fetch_private.py "$SLUG" "$REF"
+
+      # 本番の焼き（Modal・ubuntu 26.04・Node 22.23.4・apt の Noto CJK）と同じ環境にそろえる
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.23.4"
+          cache: npm
+
+      - name: Install fonts
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q fonts-noto-cjk fonts-noto-color-emoji
+          . /etc/os-release && echo "OS: $PRETTY_NAME"
+          dpkg-query -W fonts-noto-cjk fonts-noto-color-emoji
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Chrome for Remotion
+        run: npx remotion browser ensure
+
+      - name: Frames to render
+        run: |
+          mkdir -p out/qa
+          if [ -n "$FRAMES" ]; then
+            if ! printf '%s' "$FRAMES" | grep -Eq '^[0-9]+(,[0-9]+)*$'; then
+              echo "::error::frames は 11,45,120 の形で渡す"
+              exit 1
+            fi
+            printf '%s\n' "$FRAMES" | tr ',' '\n' > out/qa/frames.tsv
+          else
+            python3 -B tools/qa_frames.py "$SLUG" --out out/qa/frames.tsv
+          fi
+          echo "焼くコマの数: $(grep -cv '^#' out/qa/frames.tsv)"
+
+      - name: Render stills (PNG)
+        run: node tools/stills_v2.mjs "episodes/$SLUG/cuts.json" out/stills "@out/qa/frames.tsv"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-stills-${{ inputs.slug }}
+          path: out/stills/f*.png
+          retention-days: 3
+          if-no-files-found: error
