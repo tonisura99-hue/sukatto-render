@@ -134,6 +134,9 @@ export const MARK_MAX = 230;
 export const MARK_MAX_BIG = 190;
 // 頭が画面いっぱいの時（crash・大写し＝big）は、頭の右上が「!?」の吹き出し（A-21・x590〜1050・y690〜1110）と重なる
 //   → 印を頭の左上へ回し（角度を左右に折り返す）、頭の縁の内側（髪・こめかみ）へ寄せる（距離×0.62）
+//   2026-11-16 直しと本番 ep077・078（ep078 台帳 No.1）：折り返すのは頭の右半分（−90° より右）の印だけ＝foldAngle と同じ。
+//   前は左右を問わず折り返したので、頭の左上にもともとある steam（−118°）が −62°（右上）へ移り、「!?」の吹き出し
+//   （GiantMarkV2＝印より上の層）の下に入った（ep078 L11）。真上（−90°）と右半分の印は前と同じ置き場
 export const BIG_PULL = 0.62;
 // ㉑（ep076 台帳 No.2）：手前に2人目（add … front）が入ると、奥の人の頭の右上の印が手前の人の頭の後ろに隠れた
 //   （印は奥の人の箱の中で描かれ、手前の人はそのあとに描かれる＝上にかぶる。L04 の怒りの2つ目が約半分・L16 の汗は全部）
@@ -161,7 +164,7 @@ export const markBoxes = (
     for (let k = 0; k < sp.count; k++) {
       let [ang, rad] = multi ? MULTI_SLOTS[(k + phase * 3) % MULTI_SLOTS.length] : [a0 - mi * 40, r0];
       if (v?.big) {
-        ang = -180 - ang;
+        if (ang > -90) ang = -180 - ang;
         rad *= BIG_PULL;
       } else if (v?.fold) {
         ang = foldAngle(ang, v.fold);
